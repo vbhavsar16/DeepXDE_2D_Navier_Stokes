@@ -52,3 +52,69 @@ bc_inlet_v = dde.DirichletBC(geom, lambda X:0., boundary_inlet, component= 1)   
 bc_outlet_v = dde.DirichletBC(geom, lambda X:0., boundary_outlet, component= 1)       # Component = 1 meaning out of the unknowns (u,v,p), it is v. Lambda function says that the v is 0 on outlet wall, which (outlet wall) is previously defined by a function.
 bc_outlet_p = dde.DirichletBC(geom, lambda X:0., boundary_outlet, component= 2)       # Component = 2 meaning out of the unknowns (u,v,p), it is p. Lambda function says that the p is 0 on outlet wall, which (outlet wall) is previously defined by a function.
 
+def pde(X, Y):                                                                        # X = (x,y), Y = (u,v,p)
+    du_x = dde.grad.jacobian(Y, X, i=0, j=0)                                          # Jacobian matrix's element is grabbed. i & j value is used to tell which element we need.
+    du_y = dde.grad.jacobian(Y, X, i=0, j=1)
+    dv_x = dde.grad.jacobian(Y, X, i=1, j=0)
+    dv_y = dde.grad.jacobian(Y, X, i=1, j=1)
+    
+    dp_x = dde.grad.jacobian(Y, X, i=2, j=0)
+    dp_y = dde.grad.jacobian(Y, X, i=2, j=1)
+    
+    du_xx = dde.grad.hessian(Y, X, component=0, i=0, j=0)                             # Components = (u,v,p). component = 0 = u
+    du_yy = dde.grad.hessian(Y, X, component=0, i=1, j=1)                             # Components = (u,v,p). component = 0 = u
+    
+    dv_xx = dde.grad.hessian(Y, X, component=1, i=0, j=0)                             # Components = (u,v,p). component = 1 = v
+    dv_yy = dde.grad.hessian(Y, X, component=1, i=1, j=1)                             # Components = (u,v,p). component = 1 = v
+    
+    # Momentum Equations (u direction & v direction, it is a NS steady state eqs.-> Can be find in written notes).
+    # Y = [u, v, p]. u = Y[:,0:1] (0:1 ensures the shape of u -> (n,) instead of (n,1))
+    # Same way v = Y[:,1:2], and p = Y[:,2:]
+    pde_u = Y[:,0:1] * du_x + Y[:,1:2] * du_y + 1/rho * dp_x - (mu/rho) * (du_xx + du_yy)
+    pde_v = Y[:,0:1] * dv_x + Y[:,1:2] * dv_y + 1/rho * dp_y - (mu/rho) * (dv_xx + dv_yy)
+    
+    # Continuity Eq.
+    pde_cont = du_x + dv_y
+    
+    return [pde_u, pde_v, pde_cont]
+
+
+data = dde.data.PDE(
+    geom,
+    pde,
+    [bc_wall_u, bc_wall_v, bc_inlet_u, bc_inlet_v, bc_outlet_p, bc_outlet_v],
+    num_domain= 2000,
+    num_boundary= 200,
+    num_test= 200
+)
+
+plt.figure(figsize=(10,5))
+plt.scatter(data.train_x_all[:,0], data.train_x_all[:,1], s=0.5)
+plt.xlabel("X")
+plt.ylabel("Y")
+plt.show()
+
+# Defining the model
+net = dde.maps.FNN([2] + [64]*5 + [3], "tanh", "Glorot uniform")                     # Network starts with 2 neurons -> x,y. 5 hidden layers with 64 neurons. Last layer with 3 neurons -> u,v,p.
+
+model = dde.Model(data, net)
+
+# Training with Adam first
+model.compile("adam", lr = 1e-3)
+
+checker = dde.callbacks.ModelCheckpoint(
+    "model.ckpt", save_better_only=True, period=2000
+)
+
+loss_history, train_state = model.train(epochs=10000, callbacks=[checker])
+
+
+# Training with L-BFGS for convergence
+# Model saving option is not available for L-BFGS optimizer
+dde.optimizers.config.set_LBFGS_options(maxiter=3000)
+
+model.compile("L-BFGS")
+loss_history, train_state = model.train()
+
+# To see the training and testing loss
+dde.saveplot(loss_history, train_state, issave=True, isplot=False)
