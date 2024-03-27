@@ -118,3 +118,26 @@ loss_history, train_state = model.train()
 
 # To see the training and testing loss
 dde.saveplot(loss_history, train_state, issave=True, isplot=False)
+
+
+# Predict through the trained model and visulize.
+
+samples = geom.random_points(500000)                                              # Geom is defined, a rectangular and its bounds. The 500000 random points will be generated in that domain (x,y) of size -> (500000,2)
+results = model.predict(samples)                                                  # Results size -> (500000,3), columns are u,v,p.
+
+
+color_legend = [[0,1.5], [-0.3,0.3], [0,35]]
+
+for idx in range(3):
+    plt.figure(figsize=(20,4))
+    plt.scatter(samples[:,0],                                                     # x
+                samples[:,1],                                                     # y
+                c = results[:,idx],                                               # 3 plots for u,v,p
+                cmap='jet',
+                s=2)
+    plt.colorbar()
+    plt.clim(color_legend[idx])
+    plt.xlim((0-L/2, L-L/2))
+    plt.ylim((0-D/2, D-D/2))
+    plt.tight_layout()
+    plt.show()
